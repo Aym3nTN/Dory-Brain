@@ -1,0 +1,370 @@
+package com.dorybrain.app.ui.screens
+
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Keyboard
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.unit.dp
+import com.dorybrain.app.ui.CaptureState
+import com.dorybrain.app.ui.NoteListViewModel
+import com.dorybrain.app.ui.accentColor
+import com.dorybrain.app.ui.components.AppCard
+import com.dorybrain.app.ui.components.IconTile
+import com.dorybrain.app.ui.icon
+import com.dorybrain.app.ui.speech.rememberSpeechInput
+import kotlinx.coroutines.delay
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ComposeThoughtScreen(
+    viewModel: NoteListViewModel,
+    startDictation: Boolean,
+    onDone: () -> Unit
+) {
+    var draft by remember { mutableStateOf("") }
+    var draftBeforeDictation by remember { mutableStateOf("") }
+    val captureState by viewModel.captureState.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val focusRequester = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+
+    LaunchedEffect(Unit) {
+        viewModel.resetCapture()
+        viewModel.messages.collect { snackbarHostState.showSnackbar(it) }
+    }
+
+    val speech = rememberSpeechInput(
+        onFinalText = { spoken -> draft = appendSpoken(draftBeforeDictation, spoken) },
+        onPartialText = { partial -> draft = appendSpoken(draftBeforeDictation, partial) },
+        onError = { message -> viewModel.postMessage(message) }
+    )
+
+    // Arriving from "Tap to speak" starts listening straight away.
+    LaunchedEffect(startDictation) {
+        if (startDictation) {
+            draftBeforeDictation = ""
+            speech.start()
+        } else {
+            focusRequester.requestFocus()
+        }
+    }
+
+    // Once the bucket comes back, show it briefly then return to Home.
+    LaunchedEffect(captureState) {
+        if (captureState is CaptureState.Saved) {
+            delay(850)
+            viewModel.resetCapture()
+            onDone()
+        }
+    }
+
+    val isSaving = captureState !is CaptureState.Editing
+
+    Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
+        topBar = {
+            TopAppBar(
+                title = { Text("New Thought", style = MaterialTheme.typography.titleMedium) },
+                navigationIcon = {
+                    IconButton(onClick = onDone) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    TextButton(
+                        onClick = {
+                            if (speech.isListening) speech.stop()
+                            keyboard?.hide()
+                            viewModel.addNote(draft)
+                        },
+                        enabled = draft.isNotBlank() && !isSaving
+                    ) {
+                        Text("Send", style = MaterialTheme.typography.labelLarge)
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background,
+                    titleContentColor = MaterialTheme.colorScheme.onSurface
+                )
+            )
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(horizontal = 16.dp)
+        ) {
+            OutlinedTextField(
+                value = draft,
+                onValueChange = { draft = it },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(180.dp)
+                    .focusRequester(focusRequester),
+                placeholder = {
+                    Text(
+                        if (speech.isListening) "Listening..." else "Dump whatever's on your mind...",
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                },
+                textStyle = MaterialTheme.typography.bodyLarge,
+                shape = MaterialTheme.shapes.medium,
+                enabled = !isSaving,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = MaterialTheme.colorScheme.surface,
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                    disabledContainerColor = MaterialTheme.colorScheme.surface,
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                )
+            )
+
+            AnimatedVisibility(visible = isSaving) {
+                CategorizingCard(
+                    state = captureState,
+                    modifier = Modifier.padding(top = 16.dp)
+                )
+            }
+
+            Box(modifier = Modifier.weight(1f))
+
+            CaptureControls(
+                isListening = speech.isListening,
+                enabled = !isSaving,
+                onKeyboard = {
+                    if (speech.isListening) speech.stop()
+                    focusRequester.requestFocus()
+                    keyboard?.show()
+                },
+                onToggleMic = {
+                    if (!speech.isListening) draftBeforeDictation = draft
+                    keyboard?.hide()
+                    speech.toggle()
+                },
+                modifier = Modifier.padding(bottom = 28.dp)
+            )
+        }
+    }
+}
+
+/** Joins dictated text onto whatever was already in the field. */
+private fun appendSpoken(existing: String, spoken: String): String =
+    if (existing.isBlank()) spoken else "${existing.trimEnd()} $spoken"
+
+@Composable
+private fun CategorizingCard(
+    state: CaptureState,
+    modifier: Modifier = Modifier
+) {
+    AppCard(modifier = modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    Icons.Filled.AutoAwesome,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp)
+                )
+                Text(
+                    text = if (state is CaptureState.Saved) "Sorted" else "Categorizing...",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+
+            when (state) {
+                is CaptureState.Saved -> {
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 12.dp),
+                        shape = MaterialTheme.shapes.small,
+                        color = MaterialTheme.colorScheme.surfaceVariant
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            IconTile(
+                                icon = state.category.icon,
+                                tint = state.category.accentColor,
+                                size = 30.dp
+                            )
+                            Text(
+                                text = state.category.label,
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+                    Text(
+                        text = "Saved to ${state.category.label}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
+
+                else -> {
+                    Row(
+                        modifier = Modifier.padding(top = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp
+                        )
+                        Text(
+                            text = "AI is sorting your thought",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CaptureControls(
+    isListening: Boolean,
+    enabled: Boolean,
+    onKeyboard: () -> Unit,
+    onToggleMic: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val micColor by animateColorAsState(
+        targetValue = if (isListening) {
+            MaterialTheme.colorScheme.error
+        } else {
+            MaterialTheme.colorScheme.primary
+        },
+        label = "micColor"
+    )
+
+    // Gentle pulse so it's obvious the mic is live.
+    val pulse by rememberInfiniteTransition(label = "pulse").animateFloat(
+        initialValue = 1f,
+        targetValue = if (isListening) 0.55f else 1f,
+        animationSpec = infiniteRepeatable(tween(700), RepeatMode.Reverse),
+        label = "pulseAlpha"
+    )
+
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center
+    ) {
+        CircleButton(
+            onClick = onKeyboard,
+            enabled = enabled,
+            modifier = Modifier.size(46.dp)
+        ) {
+            Icon(
+                Icons.Filled.Keyboard,
+                contentDescription = "Show keyboard",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(22.dp)
+            )
+        }
+
+        Box(
+            modifier = Modifier
+                .padding(horizontal = 28.dp)
+                .size(64.dp)
+                .clip(RoundedCornerShape(percent = 50))
+                .background(micColor.copy(alpha = if (isListening) pulse else 1f))
+                .alpha(if (enabled) 1f else 0.5f),
+            contentAlignment = Alignment.Center
+        ) {
+            IconButton(onClick = onToggleMic, enabled = enabled) {
+                Icon(
+                    imageVector = if (isListening) Icons.Filled.Stop else Icons.Filled.Mic,
+                    contentDescription = if (isListening) "Stop dictation" else "Dictate",
+                    tint = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier.size(28.dp)
+                )
+            }
+        }
+
+        // Balances the row against the keyboard button on the left.
+        Box(modifier = Modifier.size(46.dp))
+    }
+}
+
+@Composable
+private fun CircleButton(
+    onClick: () -> Unit,
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit
+) {
+    Surface(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = modifier,
+        shape = RoundedCornerShape(percent = 50),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(width = 1.dp, color = MaterialTheme.colorScheme.outline)
+    ) {
+        Box(contentAlignment = Alignment.Center) { content() }
+    }
+}

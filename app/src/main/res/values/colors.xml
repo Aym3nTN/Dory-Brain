@@ -1,4 +1,5 @@
 <resources>
-    <color name="dory_blue">#FF2F6FED</color>
-    <color name="dory_blue_dark">#FF9FC1FF</color>
+    <color name="violet">#FF7C3AED</color>
+    <color name="canvas_light">#FFF6F6F9</color>
+    <color name="canvas_dark">#FF0F1115</color>
 </resources>

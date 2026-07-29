@@ -17,7 +17,7 @@ class CategorizerRepository(
 ) {
     suspend fun categorize(text: String): Category {
         val apiKey = settingsStore.apiKey
-        if (!apiKey.isNullOrBlank()) {
+        if (!apiKey.isNullOrBlank() && !settingsStore.forceOnDevice) {
             runCatching {
                 NvidiaCategorizer(NvidiaChatClient(apiKey, settingsStore.model)).categorize(text)
             }.onSuccess { return it }

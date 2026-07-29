@@ -12,6 +12,9 @@ interface NoteDao {
     @Query("SELECT * FROM notes ORDER BY createdAt DESC")
     fun observeAll(): Flow<List<Note>>
 
+    @Query("SELECT * FROM notes WHERE id = :id")
+    fun observeById(id: Long): Flow<Note?>
+
     @Insert
     suspend fun insert(note: Note): Long
 
