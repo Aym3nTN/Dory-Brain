@@ -30,7 +30,8 @@ class MainActivity : ComponentActivity() {
         val app = application as DoryBrainApp
         val viewModelFactory = NoteListViewModel.Factory(
             noteDao = app.database.noteDao(),
-            categorizerRepository = app.categorizerRepository
+            categorizerRepository = app.categorizerRepository,
+            refinerRepository = app.refinerRepository
         )
 
         setContent {

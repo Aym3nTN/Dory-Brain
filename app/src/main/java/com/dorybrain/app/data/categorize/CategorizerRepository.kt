@@ -3,6 +3,7 @@ package com.dorybrain.app.data.categorize
 import android.util.Log
 import com.dorybrain.app.data.Category
 import com.dorybrain.app.data.SettingsStore
+import com.dorybrain.app.data.nvidia.NvidiaChatClient
 
 /**
  * Picks the NVIDIA cloud categorizer when an API key is configured, and
@@ -18,7 +19,7 @@ class CategorizerRepository(
         val apiKey = settingsStore.apiKey
         if (!apiKey.isNullOrBlank()) {
             runCatching {
-                NvidiaCategorizer(apiKey, settingsStore.model).categorize(text)
+                NvidiaCategorizer(NvidiaChatClient(apiKey, settingsStore.model)).categorize(text)
             }.onSuccess { return it }
                 .onFailure { Log.w(TAG, "NVIDIA categorization failed, falling back locally", it) }
         }
