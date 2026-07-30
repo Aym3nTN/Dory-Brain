@@ -1,6 +1,6 @@
 # Dory Brain
 
-A very simple Android app for dumping whatever's on your mind before you forget it. Type or dictate a thought, hit send, and it gets automatically sorted into a bucket (Work, Personal, Shopping, Ideas, Health, Finance, Reminders, Other) so your list stays organized without any manual filing.
+An Android **and** desktop app for dumping whatever's on your mind before you forget it. Type or dictate a thought, hit send, and it gets automatically sorted into a bucket (Work, Personal, Shopping, Ideas, Health, Finance, Reminders, Other) so your list stays organized without any manual filing.
 
 ## Features
 
@@ -32,9 +32,11 @@ The API key is stored encrypted on-device via `EncryptedSharedPreferences` and i
 
 **Rewriting requires a key.** Unlike categorization, the AI rewrite feature has no offline fallback — meaningfully rewriting prose needs a language model, and quietly substituting a regex tidy-up would misrepresent what happened. Without a key, the rewrite action tells you to add one instead.
 
-## Voice input
+## Voice input (Android only)
 
 Dictation uses Android's built-in `SpeechRecognizer`, so it relies on whatever recognition service the device provides (usually Google's) rather than sending audio to NVIDIA. The app requests `RECORD_AUDIO` the first time you tap the mic. Depending on the device and language, recognition may require a network connection.
+
+The desktop app has no dictation — see the module notes below.
 
 ## Project structure
 
@@ -50,10 +52,56 @@ Dictation uses Android's built-in `SpeechRecognizer`, so it relies on whatever r
 
 Material You dynamic colour is deliberately off: the palette is a fixed brand look, and dynamic colour would repaint it from the device wallpaper.
 
+## Modules
+
+Compose Multiplatform, with one shared module and two thin platform apps:
+
+| Module | What it is |
+| --- | --- |
+| `:shared` | KMP module (`androidTarget` + `jvm("desktop")`). Domain models, the NVIDIA client, categorizer, rewriter, the storage/settings **interfaces**, and the whole design system (palette, typography, shapes, bucket colours, shared components). |
+| `:app` | Android app. Supplies Room + `EncryptedSharedPreferences` implementations, dictation, and the phone UI (bottom nav). |
+| `:desktop` | Compose Desktop app. Supplies SQLite-over-JDBC + a settings file, and a desktop UI (sidebar rail). |
+
+### What is and isn't shared
+
+Shared: every model, all the AI logic (categorize, rewrite, connection test), the NVIDIA HTTP layer, and the design system — so both apps look like the same product by construction rather than by copying.
+
+Not shared, and why:
+
+- **Storage.** Room is Android-only at the version pinned here, so `:shared` declares a `NoteStore` interface and each platform implements it (Room / SQLite-JDBC).
+- **Secret storage.** `EncryptedSharedPreferences` has no desktop equivalent — see the security note below.
+- **Dictation.** Android's `SpeechRecognizer` is free and built in; there is no desktop counterpart, so **the desktop app has no voice input.** Adding it would mean a paid cloud speech service and its own key.
+- **Presentation state.** `androidx.lifecycle.ViewModel` isn't multiplatform at these versions, so the Android `NoteListViewModel` and the desktop `DesktopStore` duplicate the orchestration around otherwise-shared logic. Consolidating these is the obvious next step.
+
+### Security note: the API key is handled differently per platform
+
+- **Android** — encrypted at rest with `EncryptedSharedPreferences` (platform keystore), excluded from backups.
+- **Desktop** — a plain properties file in the app data directory, restricted to your user (`0600` where POSIX permissions apply). **It is not encrypted.** Without binding to an OS keychain there's nowhere to put a key that an attacker with your file access couldn't also read, and encrypting with a key stored beside the ciphertext would be obfuscation dressed up as security. The Settings screen says so in the app too.
+
 ## Building
+
+Android (requires an Android SDK, `compileSdk`/`targetSdk` 34, `minSdk` 26 — point `local.properties` at it via `sdk.dir=/path/to/sdk`, or set `ANDROID_HOME`):
 
 ```
 ./gradlew :app:assembleDebug
 ```
 
-Requires an Android SDK (`compileSdk`/`targetSdk` 34, `minSdk` 26). Point `local.properties` at your SDK (`sdk.dir=/path/to/sdk`) or set `ANDROID_HOME`.
+Desktop — run it, or build a native installer (`.deb`/`.msi`/`.dmg` for the host OS):
+
+```
+./gradlew :desktop:run
+./gradlew :desktop:packageDistributionForCurrentOS
+```
+
+Desktop data lives in the usual per-OS location: `~/.local/share/DoryBrain` (Linux), `~/Library/Application Support/DoryBrain` (macOS), `%APPDATA%\DoryBrain` (Windows).
+
+Tests for the hand-written desktop storage layer:
+
+```
+./gradlew :desktop:jvmTest
+```
+
+### Two build notes
+
+- The packaged desktop app needs `java.sql` declared in `nativeDistributions { modules(...) }`. jlink strips it otherwise, and the app dies on `NoClassDefFoundError: java/sql/DriverManager` the moment SQLite opens — a failure that only appears in the distributable, never when running from Gradle.
+- The build prints a Kotlin-Multiplatform/AGP compatibility warning (AGP 8.5.2 is newer than the 8.2 that Kotlin 1.9.24's MPP plugin was tested against). Everything compiles and runs; the warning is left visible rather than suppressed because the combination genuinely isn't one JetBrains tested.

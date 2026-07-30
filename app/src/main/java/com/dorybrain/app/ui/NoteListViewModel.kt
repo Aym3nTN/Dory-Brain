@@ -3,12 +3,12 @@ package com.dorybrain.app.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.dorybrain.app.data.Category
-import com.dorybrain.app.data.Note
-import com.dorybrain.app.data.NoteDao
-import com.dorybrain.app.data.categorize.CategorizerRepository
-import com.dorybrain.app.data.refine.RefineMode
-import com.dorybrain.app.data.refine.RefinerRepository
+import com.dorybrain.shared.model.Category
+import com.dorybrain.shared.model.Note
+import com.dorybrain.shared.notes.NoteStore
+import com.dorybrain.shared.categorize.CategorizerRepository
+import com.dorybrain.shared.refine.RefineMode
+import com.dorybrain.shared.refine.RefinerRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -44,12 +44,12 @@ sealed interface CaptureState {
 }
 
 class NoteListViewModel(
-    private val noteDao: NoteDao,
+    private val noteStore: NoteStore,
     private val categorizerRepository: CategorizerRepository,
     private val refinerRepository: RefinerRepository
 ) : ViewModel() {
 
-    val notes: StateFlow<List<Note>> = noteDao.observeAll()
+    val notes: StateFlow<List<Note>> = noteStore.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val _searchQuery = MutableStateFlow("")
@@ -81,7 +81,7 @@ class NoteListViewModel(
     private val _messages = MutableSharedFlow<String>(extraBufferCapacity = 4)
     val messages: SharedFlow<String> = _messages
 
-    fun observeNote(id: Long): Flow<Note?> = noteDao.observeById(id)
+    fun observeNote(id: Long): Flow<Note?> = noteStore.observeById(id)
 
     fun setSearchQuery(query: String) {
         _searchQuery.value = query
@@ -110,7 +110,7 @@ class NoteListViewModel(
 
         _captureState.value = CaptureState.Categorizing
         viewModelScope.launch {
-            val id = noteDao.insert(
+            val id = noteStore.insert(
                 Note(
                     text = trimmed,
                     category = Category.OTHER,
@@ -126,7 +126,7 @@ class NoteListViewModel(
 
     fun setCategory(note: Note, category: Category) {
         viewModelScope.launch {
-            noteDao.update(note.copy(category = category, isAutoCategorized = false))
+            noteStore.update(note.copy(category = category, isAutoCategorized = false))
         }
     }
 
@@ -136,17 +136,17 @@ class NoteListViewModel(
 
         viewModelScope.launch {
             if (note.isAutoCategorized) {
-                noteDao.update(note.copy(text = trimmed, isCategorizing = true))
+                noteStore.update(note.copy(text = trimmed, isCategorizing = true))
                 applyAutoCategory(note.id, trimmed)
             } else {
-                noteDao.update(note.copy(text = trimmed))
+                noteStore.update(note.copy(text = trimmed))
             }
         }
     }
 
     fun deleteNote(note: Note) {
         viewModelScope.launch {
-            noteDao.delete(note)
+            noteStore.delete(note)
         }
     }
 
@@ -189,7 +189,7 @@ class NoteListViewModel(
         _refineState.value = RefineState.Idle
 
         viewModelScope.launch {
-            val note = noteDao.getById(proposal.noteId) ?: return@launch
+            val note = noteStore.getById(proposal.noteId) ?: return@launch
             // Bail out if the note changed underneath us while the dialog was open.
             if (note.text != proposal.originalText) {
                 _messages.emit("That note changed — rewrite discarded.")
@@ -200,10 +200,10 @@ class NoteListViewModel(
             // Re-bucket the rewritten text, but never override a category the
             // user picked by hand.
             if (note.isAutoCategorized) {
-                noteDao.update(rewritten.copy(isCategorizing = true))
+                noteStore.update(rewritten.copy(isCategorizing = true))
                 applyAutoCategory(note.id, proposal.refinedText)
             } else {
-                noteDao.update(rewritten)
+                noteStore.update(rewritten)
             }
         }
     }
@@ -214,21 +214,21 @@ class NoteListViewModel(
 
     private suspend fun applyAutoCategory(noteId: Long, text: String): Category {
         val category = categorizerRepository.categorize(text)
-        noteDao.getById(noteId)?.let { current ->
-            noteDao.update(current.copy(category = category, isCategorizing = false))
+        noteStore.getById(noteId)?.let { current ->
+            noteStore.update(current.copy(category = category, isCategorizing = false))
         }
         return category
     }
 
     class Factory(
-        private val noteDao: NoteDao,
+        private val noteStore: NoteStore,
         private val categorizerRepository: CategorizerRepository,
         private val refinerRepository: RefinerRepository
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             require(modelClass.isAssignableFrom(NoteListViewModel::class.java))
-            return NoteListViewModel(noteDao, categorizerRepository, refinerRepository) as T
+            return NoteListViewModel(noteStore, categorizerRepository, refinerRepository) as T
         }
     }
 }

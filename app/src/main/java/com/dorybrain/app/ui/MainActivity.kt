@@ -43,7 +43,7 @@ import com.dorybrain.app.ui.screens.HomeScreen
 import com.dorybrain.app.ui.screens.NoteDetailScreen
 import com.dorybrain.app.ui.screens.NotesScreen
 import com.dorybrain.app.ui.screens.SettingsScreen
-import com.dorybrain.app.ui.theme.DoryBrainTheme
+import com.dorybrain.app.ui.theme.DoryBrainAndroidTheme
 
 private object Routes {
     const val HOME = "home"
@@ -75,12 +75,12 @@ class MainActivity : ComponentActivity() {
 
         val app = application as DoryBrainApp
         val noteFactory = NoteListViewModel.Factory(
-            noteDao = app.database.noteDao(),
+            noteStore = app.noteStore,
             categorizerRepository = app.categorizerRepository,
             refinerRepository = app.refinerRepository
         )
         val settingsFactory = SettingsViewModel.Factory(
-            settingsStore = app.settingsStore,
+            settings = app.settingsStore,
             connectionTester = app.connectionTester
         )
 
@@ -88,7 +88,7 @@ class MainActivity : ComponentActivity() {
             val settingsViewModel: SettingsViewModel = viewModel(factory = settingsFactory)
             val themeMode by settingsViewModel.themeMode.collectAsState()
 
-            DoryBrainTheme(themeMode = themeMode) {
+            DoryBrainAndroidTheme(themeMode = themeMode) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background

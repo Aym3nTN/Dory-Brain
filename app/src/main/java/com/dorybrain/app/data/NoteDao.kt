@@ -10,20 +10,20 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface NoteDao {
     @Query("SELECT * FROM notes ORDER BY createdAt DESC")
-    fun observeAll(): Flow<List<Note>>
+    fun observeAll(): Flow<List<NoteEntity>>
 
     @Query("SELECT * FROM notes WHERE id = :id")
-    fun observeById(id: Long): Flow<Note?>
+    fun observeById(id: Long): Flow<NoteEntity?>
 
     @Insert
-    suspend fun insert(note: Note): Long
+    suspend fun insert(note: NoteEntity): Long
 
     @Update
-    suspend fun update(note: Note)
+    suspend fun update(note: NoteEntity)
 
     @Delete
-    suspend fun delete(note: Note)
+    suspend fun delete(note: NoteEntity)
 
     @Query("SELECT * FROM notes WHERE id = :id")
-    suspend fun getById(id: Long): Note?
+    suspend fun getById(id: Long): NoteEntity?
 }

@@ -3,8 +3,10 @@ package com.dorybrain.app.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.dorybrain.app.data.SettingsStore
-import com.dorybrain.app.data.nvidia.NvidiaConnectionTester
+import com.dorybrain.shared.nvidia.NvidiaConnectionTester
+import com.dorybrain.shared.settings.SettingsDefaults
+import com.dorybrain.shared.settings.SettingsRepository
+import com.dorybrain.shared.settings.ThemeMode
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -12,7 +14,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import com.dorybrain.app.ui.theme.ThemeMode
 
 /** Result of the "Test Connection" row. */
 sealed interface ConnectionState {
@@ -25,13 +26,13 @@ sealed interface ConnectionState {
 data class SettingsUiState(
     val maskedApiKey: String? = null,
     val hasApiKey: Boolean = false,
-    val model: String = SettingsStore.DEFAULT_MODEL,
+    val model: String = SettingsDefaults.MODEL,
     val forceOnDevice: Boolean = false,
     val themeMode: ThemeMode = ThemeMode.SYSTEM
 )
 
 class SettingsViewModel(
-    private val settingsStore: SettingsStore,
+    private val settings: SettingsRepository,
     private val connectionTester: NvidiaConnectionTester
 ) : ViewModel() {
 
@@ -44,35 +45,35 @@ class SettingsViewModel(
     /** Drives the app theme, so it also lives outside the settings screen. */
     val themeMode: StateFlow<ThemeMode> = uiState
         .map { it.themeMode }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, settingsStore.themeMode)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, settings.themeMode)
 
     private fun readSettings() = SettingsUiState(
-        maskedApiKey = settingsStore.maskedApiKey(),
-        hasApiKey = settingsStore.hasApiKey,
-        model = settingsStore.model,
-        forceOnDevice = settingsStore.forceOnDevice,
-        themeMode = settingsStore.themeMode
+        maskedApiKey = settings.maskedApiKey(),
+        hasApiKey = settings.hasApiKey,
+        model = settings.model,
+        forceOnDevice = settings.forceOnDevice,
+        themeMode = settings.themeMode
     )
 
     fun setApiKey(key: String) {
-        settingsStore.apiKey = key.trim().ifBlank { null }
+        settings.apiKey = key.trim().ifBlank { null }
         _connectionState.value = ConnectionState.Untested
         _uiState.value = readSettings()
     }
 
     fun setModel(model: String) {
-        settingsStore.model = model.ifBlank { SettingsStore.DEFAULT_MODEL }
+        settings.model = model.ifBlank { SettingsDefaults.MODEL }
         _connectionState.value = ConnectionState.Untested
         _uiState.value = readSettings()
     }
 
     fun setForceOnDevice(enabled: Boolean) {
-        settingsStore.forceOnDevice = enabled
+        settings.forceOnDevice = enabled
         _uiState.value = readSettings()
     }
 
     fun setThemeMode(mode: ThemeMode) {
-        settingsStore.themeMode = mode
+        settings.themeMode = mode
         _uiState.value = readSettings()
     }
 
@@ -91,13 +92,13 @@ class SettingsViewModel(
     }
 
     class Factory(
-        private val settingsStore: SettingsStore,
+        private val settings: SettingsRepository,
         private val connectionTester: NvidiaConnectionTester
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             require(modelClass.isAssignableFrom(SettingsViewModel::class.java))
-            return SettingsViewModel(settingsStore, connectionTester) as T
+            return SettingsViewModel(settings, connectionTester) as T
         }
     }
 }

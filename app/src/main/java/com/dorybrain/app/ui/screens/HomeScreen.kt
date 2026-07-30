@@ -31,14 +31,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
-import com.dorybrain.app.data.Category
+import com.dorybrain.shared.model.Category
 import com.dorybrain.app.ui.NoteListViewModel
-import com.dorybrain.app.ui.accentColor
-import com.dorybrain.app.ui.components.AccentCard
-import com.dorybrain.app.ui.components.AppCard
-import com.dorybrain.app.ui.components.IconTile
-import com.dorybrain.app.ui.components.SectionHeader
-import com.dorybrain.app.ui.icon
+import com.dorybrain.shared.ui.accentColor
+import com.dorybrain.shared.ui.components.AccentCard
+import com.dorybrain.shared.ui.components.AppCard
+import com.dorybrain.shared.ui.components.IconTile
+import com.dorybrain.shared.ui.components.SectionHeader
+import com.dorybrain.shared.ui.icon
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

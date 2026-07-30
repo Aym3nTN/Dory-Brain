@@ -40,14 +40,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
-import com.dorybrain.app.data.SettingsStore
+import com.dorybrain.shared.settings.SettingsDefaults
 import com.dorybrain.app.ui.ConnectionState
 import com.dorybrain.app.ui.SettingsViewModel
-import com.dorybrain.app.ui.components.AppCard
-import com.dorybrain.app.ui.components.SectionHeader
-import com.dorybrain.app.ui.components.SettingsRow
-import com.dorybrain.app.ui.theme.Success
-import com.dorybrain.app.ui.theme.ThemeMode
+import com.dorybrain.shared.ui.components.AppCard
+import com.dorybrain.shared.ui.components.SectionHeader
+import com.dorybrain.shared.ui.components.SettingsRow
+import com.dorybrain.shared.ui.theme.Success
+import com.dorybrain.shared.settings.ThemeMode
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -112,7 +112,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                             expanded = modelMenuOpen,
                             onDismissRequest = { modelMenuOpen = false }
                         ) {
-                            SettingsStore.SUGGESTED_MODELS.forEach { model ->
+                            SettingsDefaults.SUGGESTED_MODELS.forEach { model ->
                                 DropdownMenuItem(
                                     text = { Text(model) },
                                     onClick = {

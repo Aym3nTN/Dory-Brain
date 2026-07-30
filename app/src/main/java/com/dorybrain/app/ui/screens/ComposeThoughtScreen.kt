@@ -57,10 +57,10 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.unit.dp
 import com.dorybrain.app.ui.CaptureState
 import com.dorybrain.app.ui.NoteListViewModel
-import com.dorybrain.app.ui.accentColor
-import com.dorybrain.app.ui.components.AppCard
-import com.dorybrain.app.ui.components.IconTile
-import com.dorybrain.app.ui.icon
+import com.dorybrain.shared.ui.accentColor
+import com.dorybrain.shared.ui.components.AppCard
+import com.dorybrain.shared.ui.components.IconTile
+import com.dorybrain.shared.ui.icon
 import com.dorybrain.app.ui.speech.rememberSpeechInput
 import kotlinx.coroutines.delay
 
