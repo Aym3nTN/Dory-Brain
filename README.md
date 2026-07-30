@@ -36,6 +36,17 @@ The API key is stored encrypted on-device via `EncryptedSharedPreferences` and i
 
 Dictation uses Android's built-in `SpeechRecognizer`, so it relies on whatever recognition service the device provides (usually Google's) rather than sending audio to NVIDIA. The app requests `RECORD_AUDIO` the first time you tap the mic. Depending on the device and language, recognition may require a network connection.
 
+**The mic stays open through pauses.** `SpeechRecognizer` is built for a single short utterance — it decides on its own that you've stopped talking and ends the session, and the `EXTRA_SPEECH_INPUT_*_SILENCE_LENGTH_MILLIS` extras that ask for more patience are documented as hints that most recognizers ignore. So one dictation *session* here is not one recognizer session:
+
+- Whenever a segment ends — with a result, a no-match, or a speech timeout from a long pause — the recognizer is started again immediately.
+- Each finished segment is appended to a running transcript, so words spoken before a pause are never lost or overwritten.
+- Only an explicit stop (the button, sending the note, or leaving the screen) ends it. Real faults — permissions, audio, network — still stop and say why.
+- A guard counts failures that arrive too fast to be a human pause and gives up after a handful, so a broken recognizer can't spin in a restart loop holding the mic.
+
+While listening, a status line reads "Mic is on — take as long as you like", switching to "Listening..." when speech is actually being heard, so a pause doesn't look like the recognizer quit.
+
+The decision logic lives in `DictationSession`, deliberately free of framework objects so it's unit tested on the JVM (`./gradlew :app:testDebugUnitTest`) — including that a pause restarts rather than ends, and that text accumulates across pauses.
+
 The desktop app has no dictation — see the module notes below.
 
 ## Project structure

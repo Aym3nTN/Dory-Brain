@@ -83,9 +83,10 @@ fun ComposeThoughtScreen(
         viewModel.messages.collect { snackbarHostState.showSnackbar(it) }
     }
 
+    // The controller hands back the whole session transcript, so the field is
+    // rebuilt from the pre-dictation text each time rather than appended to.
     val speech = rememberSpeechInput(
-        onFinalText = { spoken -> draft = appendSpoken(draftBeforeDictation, spoken) },
-        onPartialText = { partial -> draft = appendSpoken(draftBeforeDictation, partial) },
+        onTranscript = { spoken -> draft = appendSpoken(draftBeforeDictation, spoken) },
         onError = { message -> viewModel.postMessage(message) }
     )
 
@@ -155,7 +156,9 @@ fun ComposeThoughtScreen(
                     .focusRequester(focusRequester),
                 placeholder = {
                     Text(
-                        if (speech.isListening) "Listening..." else "Dump whatever's on your mind...",
+                        // The status row below reports mic state, so this
+                        // stays a plain prompt.
+                        if (speech.isListening) "Go ahead..." else "Dump whatever's on your mind...",
                         style = MaterialTheme.typography.bodyLarge
                     )
                 },
@@ -170,6 +173,13 @@ fun ComposeThoughtScreen(
                     unfocusedBorderColor = MaterialTheme.colorScheme.outline
                 )
             )
+
+            AnimatedVisibility(visible = speech.isListening && !isSaving) {
+                DictationStatus(
+                    isHearingSpeech = speech.isHearingSpeech,
+                    modifier = Modifier.padding(top = 10.dp)
+                )
+            }
 
             AnimatedVisibility(visible = isSaving) {
                 CategorizingCard(
@@ -202,6 +212,41 @@ fun ComposeThoughtScreen(
 /** Joins dictated text onto whatever was already in the field. */
 private fun appendSpoken(existing: String, spoken: String): String =
     if (existing.isBlank()) spoken else "${existing.trimEnd()} $spoken"
+
+/**
+ * Reassures the user the mic is still theirs during a pause — without this,
+ * silence looks identical to the recognizer having quit.
+ */
+@Composable
+private fun DictationStatus(isHearingSpeech: Boolean, modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(8.dp)
+                .clip(RoundedCornerShape(percent = 50))
+                .background(
+                    if (isHearingSpeech) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.primary
+                    }
+                )
+        )
+        Text(
+            text = if (isHearingSpeech) {
+                "Listening..."
+            } else {
+                "Mic is on — take as long as you like"
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
 
 @Composable
 private fun CategorizingCard(
