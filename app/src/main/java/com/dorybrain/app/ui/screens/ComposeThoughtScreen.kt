@@ -77,7 +77,6 @@ fun ComposeThoughtScreen(
     onRefine: () -> Unit
 ) {
     var draft by remember { mutableStateOf("") }
-    var draftBeforeDictation by remember { mutableStateOf("") }
     val captureState by viewModel.captureState.collectAsState()
     val draftOverride by viewModel.draftOverride.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -89,10 +88,11 @@ fun ComposeThoughtScreen(
         viewModel.messages.collect { snackbarHostState.showSnackbar(it) }
     }
 
-    // The controller hands back the whole session transcript, so the field is
-    // rebuilt from the pre-dictation text each time rather than appended to.
+    // The controller owns the pre-dictation text and hands back the complete
+    // field contents, so this is a straight assignment — there is no baseline
+    // held here that could go stale and rewind the field.
     val speech = rememberSpeechInput(
-        onTranscript = { spoken -> draft = appendSpoken(draftBeforeDictation, spoken) },
+        onTranscript = { updated -> draft = updated },
         onError = { message -> viewModel.postMessage(message) }
     )
 
@@ -100,7 +100,6 @@ fun ComposeThoughtScreen(
     LaunchedEffect(draftOverride) {
         draftOverride?.let { returned ->
             draft = returned
-            draftBeforeDictation = returned
             viewModel.consumeDraftOverride()
             focusRequester.requestFocus()
         }
@@ -109,8 +108,7 @@ fun ComposeThoughtScreen(
     // Arriving from "Tap to speak" starts listening straight away.
     LaunchedEffect(startDictation) {
         if (startDictation) {
-            draftBeforeDictation = ""
-            speech.start()
+            speech.start(baseline = "")
         } else if (draftOverride == null) {
             focusRequester.requestFocus()
         }
@@ -203,19 +201,14 @@ fun ComposeThoughtScreen(
                     keyboard?.show()
                 },
                 onToggleMic = {
-                    if (!isListening) draftBeforeDictation = draft
                     keyboard?.hide()
-                    speech.toggle()
+                    speech.toggle(baseline = draft)
                 },
                 modifier = Modifier.padding(bottom = 28.dp)
             )
         }
     }
 }
-
-/** Joins dictated text onto whatever was already in the field. */
-private fun appendSpoken(existing: String, spoken: String): String =
-    if (existing.isBlank()) spoken else "${existing.trimEnd()} $spoken"
 
 /**
  * The dictation state: waveform, status, and what's been heard so far. The

@@ -27,13 +27,32 @@ internal class DictationSession {
     var rapidFailures: Int = 0
         private set
 
+    /**
+     * Whatever was in the field before dictation started. Held here rather
+     * than in the UI so the text handed back is always the complete field
+     * contents, and can't be rebuilt from a stale captured value.
+     */
+    var baseline: String = ""
+        private set
+
     /** Everything heard this session: finalized segments plus the partial. */
-    val transcript: String
+    val spoken: String
         get() = buildString {
             append(committed)
             if (partial.isNotBlank()) {
                 if (isNotEmpty()) append(' ')
                 append(partial)
+            }
+        }
+
+    /** [baseline] plus everything heard — what the capture field should show. */
+    val transcript: String
+        get() {
+            val heard = spoken
+            return when {
+                baseline.isBlank() -> heard
+                heard.isBlank() -> baseline
+                else -> "${baseline.trimEnd()} $heard"
             }
         }
 
@@ -49,7 +68,8 @@ internal class DictationSession {
         data object Finish : Next
     }
 
-    fun reset() {
+    fun reset(baseline: String = "") {
+        this.baseline = baseline
         committed = ""
         partial = ""
         rapidFailures = 0
@@ -61,13 +81,34 @@ internal class DictationSession {
         rapidFailures = 0
     }
 
-    /** Folds [text] into [committed]; blank text is ignored. */
+    /**
+     * Folds [text] into [committed].
+     *
+     * Recognizers differ in what a restarted segment returns: most give just
+     * the new words, but some redeliver the whole utterance so far, and some
+     * repeat the previous segment verbatim. Appending blindly would duplicate
+     * in the first case; replacing blindly would erase in the second. So the
+     * three cases are told apart explicitly, and [committed] is only ever
+     * allowed to grow — a session must never lose words already heard.
+     */
     fun commit(text: String?) {
         val segment = text?.trim().orEmpty()
         partial = ""
         if (segment.isEmpty()) return
 
-        committed = if (committed.isEmpty()) segment else "$committed $segment"
+        val existing = committed
+        committed = when {
+            existing.isEmpty() -> segment
+
+            // Cumulative recognizer: this segment restates everything so far.
+            segment.length > existing.length &&
+                segment.startsWith(existing, ignoreCase = true) -> segment
+
+            // Redelivery of something already recorded — nothing new to add.
+            existing.endsWith(segment, ignoreCase = true) -> existing
+
+            else -> "$existing $segment"
+        }
         rapidFailures = 0
     }
 
@@ -107,6 +148,8 @@ internal class DictationSession {
         }
 
         if (errorCode == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) {
+            // Keep anything heard before restarting, same as the pause path.
+            commitPartial()
             rapidFailures += 1
             return if (rapidFailures >= MAX_RAPID_FAILURES) {
                 Next.Fail("Recognizer is busy — stopped listening.")

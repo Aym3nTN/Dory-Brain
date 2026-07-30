@@ -56,7 +56,11 @@ Dictation uses Android's built-in `SpeechRecognizer`, so it relies on whatever r
 
 While listening, a status line reads "Mic is on — take as long as you like", switching to "Listening..." when speech is actually being heard, so a pause doesn't look like the recognizer quit.
 
-The decision logic lives in `DictationSession`, deliberately free of framework objects so it's unit tested on the JVM (`./gradlew :app:testDebugUnitTest`) — including that a pause restarts rather than ends, and that text accumulates across pauses.
+**Accumulating across pauses is defensive**, because recognizers disagree about what a restarted segment returns. Most give only the new words; some restate the whole utterance so far; some redeliver the previous segment verbatim. Appending blindly duplicates in the second case, replacing blindly erases in the third — so the three are told apart explicitly and the committed text is only ever allowed to grow. The text already in the field before dictation started (the baseline) is held inside `DictationSession` rather than in the UI, so what comes back is always the complete field contents and can't be rebuilt from a stale captured value.
+
+Each segment also gets a freshly created `SpeechRecognizer`. Reusing one whose previous session has finished behaves erratically on several devices — callbacks stop arriving, or arrive against the wrong session.
+
+The decision logic lives in `DictationSession`, deliberately free of framework objects so it's unit tested on the JVM (`./gradlew :app:testDebugUnitTest`) — including that a pause restarts rather than ends, that text accumulates across pauses, and that the transcript never shrinks under any of the three recognizer behaviours above.
 
 The desktop app has no dictation — see the module notes below.
 

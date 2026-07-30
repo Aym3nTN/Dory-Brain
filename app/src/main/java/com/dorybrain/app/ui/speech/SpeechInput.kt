@@ -78,6 +78,7 @@ class SpeechInputController internal constructor(
 
     private var restartScheduled = false
     private var segmentStartedAt = 0L
+    private var pendingBaseline = ""
 
     val isAvailable: Boolean get() = SpeechRecognizer.isRecognitionAvailable(context)
 
@@ -85,12 +86,14 @@ class SpeechInputController internal constructor(
         get() = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
             PackageManager.PERMISSION_GRANTED
 
-    fun toggle() {
-        if (sessionActive) stop() else start()
+    fun toggle(baseline: String = "") {
+        if (sessionActive) stop() else start(baseline)
     }
 
-    fun start() {
+    /** @param baseline text already in the field, which dictation adds to. */
+    fun start(baseline: String = "") {
         if (sessionActive) return
+        pendingBaseline = baseline
 
         if (!isAvailable) {
             onError("No speech recognition available on this device.")
@@ -103,8 +106,8 @@ class SpeechInputController internal constructor(
 
         sessionActive = true
         isListening = true
-        session.reset()
-        transcript = ""
+        session.reset(baseline)
+        transcript = baseline
         levels = List(LEVEL_WINDOW) { 0f }
 
         beginSegment()
@@ -127,7 +130,11 @@ class SpeechInputController internal constructor(
     }
 
     internal fun onPermissionResult(granted: Boolean) {
-        if (granted) start() else onError("Microphone permission is needed to dictate notes.")
+        // The permission prompt is asynchronous, so pick the baseline back up
+        // rather than losing what was already in the field.
+        if (granted) start(pendingBaseline) else onError(
+            "Microphone permission is needed to dictate notes."
+        )
     }
 
     internal fun release() {
@@ -143,15 +150,24 @@ class SpeechInputController internal constructor(
 
     // ---- session plumbing ----
 
+    /**
+     * Starts one recognizer segment.
+     *
+     * A fresh [SpeechRecognizer] is built each time rather than reusing the
+     * instance: several devices behave erratically when `startListening` is
+     * called again on a recognizer whose previous session already finished —
+     * callbacks stop arriving, or arrive against the wrong session. Restarts
+     * are always posted with a delay, so this never runs inside a callback of
+     * the recognizer it is about to destroy.
+     */
     private fun beginSegment() {
         if (!sessionActive) return
 
-        val speechRecognizer = recognizer ?: SpeechRecognizer
-            .createSpeechRecognizer(context)
-            .also {
-                it.setRecognitionListener(listener)
-                recognizer = it
-            }
+        runCatching { recognizer?.destroy() }
+        val speechRecognizer = SpeechRecognizer.createSpeechRecognizer(context).also {
+            it.setRecognitionListener(listener)
+            recognizer = it
+        }
 
         segmentStartedAt = SystemClock.elapsedRealtime()
         runCatching { speechRecognizer.startListening(buildIntent()) }
