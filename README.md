@@ -18,8 +18,19 @@ Three tabs plus two pushed screens:
 - **Home** — "What's on your mind?", shortcuts to type or speak, and the bucket list with counts. Tapping a bucket jumps to Notes filtered to it.
 - **Notes** — search, bucket filter, notes grouped by day with a coloured accent per bucket.
 - **Settings** — NVIDIA API key/model with a real connection test, on-device-only toggle, appearance, version.
-- **New Thought** — the capture screen, with the live "Categorizing…" card and the resulting bucket.
+- **New Thought** — the capture screen. Typing shows the field, the "Categorizing…" card and the resulting bucket; dictating switches it to a full-screen listening state with a live waveform.
+- **Refine with AI** — pushed from the capture screen: the draft as you said it, the AI's rewrite, then Save Note or Edit Manually.
 - **Note detail** — the note, its bucket pill, inline editing, AI rewrite, share, and delete.
+
+### The listening state
+
+While dictating, the capture screen shows a waveform driven by the recognizer's real RMS levels rather than a decorative animation, so it reflects what the microphone is actually picking up. Because levels collapse to near-zero during a pause — which would read as "dead" — a slow idle ripple keeps a minimum of motion, and the caption switches between "Listening…" and "Mic is on / take as long as you like". The running transcript stays on screen above the waveform: with continuous dictation you may speak several sentences, and hiding them makes it impossible to tell whether anything was captured.
+
+### Refining before saving
+
+`Refine with AI` on the capture screen rewrites the draft *before* it becomes a note, which is a separate flow from rewriting a saved note (`DraftRefineState` vs `RefineState`): there's no note to update yet, and the outcome is either Save Note or Edit Manually, the latter dropping the AI's wording back into the field. It uses the Clean up mode; the other modes (checklist, shorten, add detail) remain on saved notes.
+
+Note on the footer text: the design's "happens on-device or securely in the cloud" isn't true of this app — sorting can run on-device, but rewriting always goes to NVIDIA. The screen says that instead of the friendlier-but-false version.
 
 ## How categorization works
 

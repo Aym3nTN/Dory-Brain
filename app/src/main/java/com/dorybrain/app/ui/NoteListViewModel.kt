@@ -43,6 +43,21 @@ sealed interface CaptureState {
     data class Saved(val category: Category) : CaptureState
 }
 
+/**
+ * Refining a draft that hasn't been saved yet, which is a separate flow from
+ * rewriting an existing note: there's no note to update, and the outcome is
+ * either "save this" or "put it back in the field so I can edit it".
+ */
+sealed interface DraftRefineState {
+    data object Idle : DraftRefineState
+    data class Working(val mode: RefineMode, val original: String) : DraftRefineState
+    data class Ready(
+        val mode: RefineMode,
+        val original: String,
+        val refined: String
+    ) : DraftRefineState
+}
+
 class NoteListViewModel(
     private val noteStore: NoteStore,
     private val categorizerRepository: CategorizerRepository,
@@ -77,6 +92,13 @@ class NoteListViewModel(
 
     private val _captureState = MutableStateFlow<CaptureState>(CaptureState.Editing)
     val captureState: StateFlow<CaptureState> = _captureState.asStateFlow()
+
+    private val _draftRefineState = MutableStateFlow<DraftRefineState>(DraftRefineState.Idle)
+    val draftRefineState: StateFlow<DraftRefineState> = _draftRefineState.asStateFlow()
+
+    /** Text handed back to the capture field, e.g. from "Edit Manually". */
+    private val _draftOverride = MutableStateFlow<String?>(null)
+    val draftOverride: StateFlow<String?> = _draftOverride.asStateFlow()
 
     private val _messages = MutableSharedFlow<String>(extraBufferCapacity = 4)
     val messages: SharedFlow<String> = _messages
@@ -122,6 +144,54 @@ class NoteListViewModel(
             val category = applyAutoCategory(id, trimmed)
             _captureState.value = CaptureState.Saved(category)
         }
+    }
+
+    // ---- refining a draft, before it becomes a note ----
+
+    /**
+     * Rewrites the in-progress draft. Returns false when there's nothing to
+     * refine, so the caller can skip navigating to the refine screen.
+     */
+    fun refineDraft(text: String, mode: RefineMode = RefineMode.CLEAN_UP): Boolean {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) return false
+
+        _draftRefineState.value = DraftRefineState.Working(mode, trimmed)
+        viewModelScope.launch {
+            when (val result = refinerRepository.refine(trimmed, mode)) {
+                is RefinerRepository.Result.Success ->
+                    _draftRefineState.value = DraftRefineState.Ready(
+                        mode = mode,
+                        original = trimmed,
+                        refined = result.refinedText
+                    )
+
+                is RefinerRepository.Result.Failure -> {
+                    _draftRefineState.value = DraftRefineState.Idle
+                    _messages.emit(result.message)
+                }
+
+                RefinerRepository.Result.NoApiKey -> {
+                    _draftRefineState.value = DraftRefineState.Idle
+                    _messages.emit("Add an NVIDIA API key in Settings to refine notes.")
+                }
+            }
+        }
+        return true
+    }
+
+    fun clearDraftRefinement() {
+        _draftRefineState.value = DraftRefineState.Idle
+    }
+
+    /** "Edit Manually": hand the text back to the capture field. */
+    fun returnDraftForEditing(text: String) {
+        _draftOverride.value = text
+        _draftRefineState.value = DraftRefineState.Idle
+    }
+
+    fun consumeDraftOverride() {
+        _draftOverride.value = null
     }
 
     fun setCategory(note: Note, category: Category) {

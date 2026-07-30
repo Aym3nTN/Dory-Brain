@@ -143,3 +143,18 @@ internal class DictationSession {
         const val MAX_RAPID_FAILURES = 5
     }
 }
+
+/**
+ * Maps [RecognitionListener.onRmsChanged]'s value onto 0f..1f for the
+ * waveform. The callback's range isn't specified precisely; in practice it
+ * sits around -2dB for silence up to about 10dB for loud speech, and some
+ * devices report outside that, so the result is clamped.
+ */
+internal fun normalizeRms(
+    rmsdB: Float,
+    floorDb: Float = RMS_FLOOR_DB,
+    ceilingDb: Float = RMS_CEILING_DB
+): Float = ((rmsdB - floorDb) / (ceilingDb - floorDb)).coerceIn(0f, 1f)
+
+internal const val RMS_FLOOR_DB = -2f
+internal const val RMS_CEILING_DB = 10f

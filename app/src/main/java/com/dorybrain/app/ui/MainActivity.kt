@@ -42,6 +42,7 @@ import com.dorybrain.app.ui.screens.ComposeThoughtScreen
 import com.dorybrain.app.ui.screens.HomeScreen
 import com.dorybrain.app.ui.screens.NoteDetailScreen
 import com.dorybrain.app.ui.screens.NotesScreen
+import com.dorybrain.app.ui.screens.RefineDraftScreen
 import com.dorybrain.app.ui.screens.SettingsScreen
 import com.dorybrain.app.ui.theme.DoryBrainAndroidTheme
 
@@ -50,6 +51,7 @@ private object Routes {
     const val NOTES = "notes"
     const val SETTINGS = "settings"
     const val COMPOSE = "compose?dictate={dictate}"
+    const val REFINE_DRAFT = "refineDraft"
     const val DETAIL = "note/{noteId}"
 
     fun compose(startDictation: Boolean = false) = "compose?dictate=$startDictation"
@@ -164,7 +166,23 @@ private fun DoryBrainApp(
                 ComposeThoughtScreen(
                     viewModel = noteViewModel,
                     startDictation = entry.arguments?.getBoolean("dictate") ?: false,
-                    onDone = { navController.popBackStack() }
+                    onDone = { navController.popBackStack() },
+                    onRefine = { navController.navigate(Routes.REFINE_DRAFT) }
+                )
+            }
+
+            composable(Routes.REFINE_DRAFT) {
+                RefineDraftScreen(
+                    viewModel = noteViewModel,
+                    // Saving hands back to the compose screen, which is
+                    // already watching for the categorized result and pops
+                    // itself once the bucket has been shown.
+                    onSaved = { navController.popBackStack() },
+                    onEditManually = { navController.popBackStack() },
+                    onBack = {
+                        noteViewModel.clearDraftRefinement()
+                        navController.popBackStack()
+                    }
                 )
             }
 

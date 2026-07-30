@@ -61,6 +61,14 @@ class SpeechInputController internal constructor(
     var transcript by mutableStateOf("")
         private set
 
+    /**
+     * Recent input levels, oldest first, each roughly 0f..1f. Driven by the
+     * recognizer's RMS callback so the waveform reflects the actual
+     * microphone rather than being decorative.
+     */
+    var levels by mutableStateOf(List(LEVEL_WINDOW) { 0f })
+        private set
+
     private val handler = Handler(Looper.getMainLooper())
     private var recognizer: SpeechRecognizer? = null
     private val session = DictationSession()
@@ -97,6 +105,7 @@ class SpeechInputController internal constructor(
         isListening = true
         session.reset()
         transcript = ""
+        levels = List(LEVEL_WINDOW) { 0f }
 
         beginSegment()
     }
@@ -129,6 +138,7 @@ class SpeechInputController internal constructor(
         recognizer = null
         isListening = false
         isHearingSpeech = false
+        levels = List(LEVEL_WINDOW) { 0f }
     }
 
     // ---- session plumbing ----
@@ -229,7 +239,10 @@ class SpeechInputController internal constructor(
             isHearingSpeech = true
         }
 
-        override fun onRmsChanged(rmsdB: Float) = Unit
+        override fun onRmsChanged(rmsdB: Float) {
+            levels = levels.drop(1) + normalizeRms(rmsdB)
+        }
+
         override fun onBufferReceived(buffer: ByteArray?) = Unit
 
         override fun onEndOfSpeech() {
@@ -277,6 +290,8 @@ class SpeechInputController internal constructor(
         const val FINAL_RESULT_GRACE_MS = 1_200L
 
         const val RAPID_FAILURE_WINDOW_MS = DictationSession.RAPID_FAILURE_WINDOW_MS
+
+        const val LEVEL_WINDOW = 48
     }
 }
 

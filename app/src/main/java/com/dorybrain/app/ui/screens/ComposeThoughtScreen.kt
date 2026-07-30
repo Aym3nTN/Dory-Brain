@@ -18,13 +18,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -51,17 +52,20 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.dorybrain.app.ui.CaptureState
 import com.dorybrain.app.ui.NoteListViewModel
+import com.dorybrain.app.ui.speech.Waveform
+import com.dorybrain.app.ui.speech.rememberSpeechInput
 import com.dorybrain.shared.ui.accentColor
 import com.dorybrain.shared.ui.components.AppCard
 import com.dorybrain.shared.ui.components.IconTile
 import com.dorybrain.shared.ui.icon
-import com.dorybrain.app.ui.speech.rememberSpeechInput
 import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -69,11 +73,13 @@ import kotlinx.coroutines.delay
 fun ComposeThoughtScreen(
     viewModel: NoteListViewModel,
     startDictation: Boolean,
-    onDone: () -> Unit
+    onDone: () -> Unit,
+    onRefine: () -> Unit
 ) {
     var draft by remember { mutableStateOf("") }
     var draftBeforeDictation by remember { mutableStateOf("") }
     val captureState by viewModel.captureState.collectAsState()
+    val draftOverride by viewModel.draftOverride.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val focusRequester = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
@@ -90,12 +96,22 @@ fun ComposeThoughtScreen(
         onError = { message -> viewModel.postMessage(message) }
     )
 
+    // Coming back from "Edit Manually" with the AI's wording in hand.
+    LaunchedEffect(draftOverride) {
+        draftOverride?.let { returned ->
+            draft = returned
+            draftBeforeDictation = returned
+            viewModel.consumeDraftOverride()
+            focusRequester.requestFocus()
+        }
+    }
+
     // Arriving from "Tap to speak" starts listening straight away.
     LaunchedEffect(startDictation) {
         if (startDictation) {
             draftBeforeDictation = ""
             speech.start()
-        } else {
+        } else if (draftOverride == null) {
             focusRequester.requestFocus()
         }
     }
@@ -110,6 +126,7 @@ fun ComposeThoughtScreen(
     }
 
     val isSaving = captureState !is CaptureState.Editing
+    val isListening = speech.isListening
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -122,15 +139,22 @@ fun ComposeThoughtScreen(
                     }
                 },
                 actions = {
-                    TextButton(
-                        onClick = {
-                            if (speech.isListening) speech.stop()
-                            keyboard?.hide()
-                            viewModel.addNote(draft)
-                        },
-                        enabled = draft.isNotBlank() && !isSaving
-                    ) {
-                        Text("Send", style = MaterialTheme.typography.labelLarge)
+                    if (isListening) {
+                        // While dictating, the useful action is bailing out —
+                        // the mic button below is what finishes.
+                        TextButton(onClick = { speech.stop() }) {
+                            Text("Cancel", style = MaterialTheme.typography.labelLarge)
+                        }
+                    } else {
+                        TextButton(
+                            onClick = {
+                                keyboard?.hide()
+                                viewModel.addNote(draft)
+                            },
+                            enabled = draft.isNotBlank() && !isSaving
+                        ) {
+                            Text("Send", style = MaterialTheme.typography.labelLarge)
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -147,59 +171,39 @@ fun ComposeThoughtScreen(
                 .padding(padding)
                 .padding(horizontal = 16.dp)
         ) {
-            OutlinedTextField(
-                value = draft,
-                onValueChange = { draft = it },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(180.dp)
-                    .focusRequester(focusRequester),
-                placeholder = {
-                    Text(
-                        // The status row below reports mic state, so this
-                        // stays a plain prompt.
-                        if (speech.isListening) "Go ahead..." else "Dump whatever's on your mind...",
-                        style = MaterialTheme.typography.bodyLarge
-                    )
-                },
-                textStyle = MaterialTheme.typography.bodyLarge,
-                shape = MaterialTheme.shapes.medium,
-                enabled = !isSaving,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = MaterialTheme.colorScheme.surface,
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-                    disabledContainerColor = MaterialTheme.colorScheme.surface,
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outline
-                )
-            )
-
-            AnimatedVisibility(visible = speech.isListening && !isSaving) {
-                DictationStatus(
+            if (isListening) {
+                ListeningPane(
+                    transcript = draft,
+                    levels = speech.levels,
                     isHearingSpeech = speech.isHearingSpeech,
-                    modifier = Modifier.padding(top = 10.dp)
+                    modifier = Modifier.weight(1f)
+                )
+            } else {
+                EditingPane(
+                    draft = draft,
+                    onDraftChange = { draft = it },
+                    focusRequester = focusRequester,
+                    enabled = !isSaving,
+                    captureState = captureState,
+                    isSaving = isSaving,
+                    onRefine = {
+                        keyboard?.hide()
+                        if (viewModel.refineDraft(draft)) onRefine()
+                    },
+                    modifier = Modifier.weight(1f)
                 )
             }
-
-            AnimatedVisibility(visible = isSaving) {
-                CategorizingCard(
-                    state = captureState,
-                    modifier = Modifier.padding(top = 16.dp)
-                )
-            }
-
-            Box(modifier = Modifier.weight(1f))
 
             CaptureControls(
-                isListening = speech.isListening,
+                isListening = isListening,
                 enabled = !isSaving,
                 onKeyboard = {
-                    if (speech.isListening) speech.stop()
+                    if (isListening) speech.stop()
                     focusRequester.requestFocus()
                     keyboard?.show()
                 },
                 onToggleMic = {
-                    if (!speech.isListening) draftBeforeDictation = draft
+                    if (!isListening) draftBeforeDictation = draft
                     keyboard?.hide()
                     speech.toggle()
                 },
@@ -214,37 +218,127 @@ private fun appendSpoken(existing: String, spoken: String): String =
     if (existing.isBlank()) spoken else "${existing.trimEnd()} $spoken"
 
 /**
- * Reassures the user the mic is still theirs during a pause — without this,
- * silence looks identical to the recognizer having quit.
+ * The dictation state: waveform, status, and what's been heard so far. The
+ * transcript is kept on screen deliberately — with continuous dictation you
+ * may speak several sentences, and hiding them makes it impossible to tell
+ * whether anything was captured.
  */
 @Composable
-private fun DictationStatus(isHearingSpeech: Boolean, modifier: Modifier = Modifier) {
-    Row(
+private fun ListeningPane(
+    transcript: String,
+    levels: List<Float>,
+    isHearingSpeech: Boolean,
+    modifier: Modifier = Modifier
+) {
+    Column(
         modifier = modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Box(
             modifier = Modifier
-                .size(8.dp)
-                .clip(RoundedCornerShape(percent = 50))
-                .background(
-                    if (isHearingSpeech) {
-                        MaterialTheme.colorScheme.error
-                    } else {
-                        MaterialTheme.colorScheme.primary
-                    }
-                )
+                .weight(1f)
+                .fillMaxWidth()
+                .padding(top = 8.dp),
+            contentAlignment = Alignment.TopCenter
+        ) {
+            if (transcript.isNotBlank()) {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    Text(
+                        text = transcript,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+        }
+
+        Waveform(
+            levels = levels,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(96.dp)
         )
+
+        Text(
+            text = if (isHearingSpeech) "Listening..." else "Mic is on",
+            style = MaterialTheme.typography.headlineSmall,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.padding(top = 20.dp)
+        )
+
         Text(
             text = if (isHearingSpeech) {
-                "Listening..."
+                "Tap to stop"
             } else {
-                "Mic is on — take as long as you like"
+                "Take as long as you like — tap to stop"
             },
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 6.dp)
         )
+
+        Box(modifier = Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun EditingPane(
+    draft: String,
+    onDraftChange: (String) -> Unit,
+    focusRequester: FocusRequester,
+    enabled: Boolean,
+    captureState: CaptureState,
+    isSaving: Boolean,
+    onRefine: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier = modifier.fillMaxWidth()) {
+        OutlinedTextField(
+            value = draft,
+            onValueChange = onDraftChange,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(180.dp)
+                .focusRequester(focusRequester),
+            placeholder = {
+                Text(
+                    "Dump whatever's on your mind...",
+                    style = MaterialTheme.typography.bodyLarge
+                )
+            },
+            textStyle = MaterialTheme.typography.bodyLarge,
+            shape = MaterialTheme.shapes.medium,
+            enabled = enabled,
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedContainerColor = MaterialTheme.colorScheme.surface,
+                unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                disabledContainerColor = MaterialTheme.colorScheme.surface,
+                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                unfocusedBorderColor = MaterialTheme.colorScheme.outline
+            )
+        )
+
+        AnimatedVisibility(visible = draft.isNotBlank() && !isSaving) {
+            TextButton(onClick = onRefine, modifier = Modifier.padding(top = 4.dp)) {
+                Icon(
+                    Icons.Filled.AutoAwesome,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Text("  Refine with AI", style = MaterialTheme.typography.labelLarge)
+            }
+        }
+
+        AnimatedVisibility(visible = isSaving) {
+            CategorizingCard(
+                state = captureState,
+                modifier = Modifier.padding(top = 12.dp)
+            )
+        }
+
+        Box(modifier = Modifier.weight(1f))
     }
 }
 
@@ -292,18 +386,12 @@ private fun CategorizingCard(
                                 size = 30.dp
                             )
                             Text(
-                                text = state.category.label,
+                                text = "Saved to ${state.category.label}",
                                 style = MaterialTheme.typography.titleSmall,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                         }
                     }
-                    Text(
-                        text = "Saved to ${state.category.label}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 8.dp)
-                    )
                 }
 
                 else -> {
@@ -337,20 +425,16 @@ private fun CaptureControls(
     modifier: Modifier = Modifier
 ) {
     val micColor by animateColorAsState(
-        targetValue = if (isListening) {
-            MaterialTheme.colorScheme.error
-        } else {
-            MaterialTheme.colorScheme.primary
-        },
+        targetValue = MaterialTheme.colorScheme.primary,
         label = "micColor"
     )
 
-    // Gentle pulse so it's obvious the mic is live.
-    val pulse by rememberInfiniteTransition(label = "pulse").animateFloat(
+    // Halo rings that breathe while the mic is open.
+    val haloScale by rememberInfiniteTransition(label = "halo").animateFloat(
         initialValue = 1f,
-        targetValue = if (isListening) 0.55f else 1f,
-        animationSpec = infiniteRepeatable(tween(700), RepeatMode.Reverse),
-        label = "pulseAlpha"
+        targetValue = if (isListening) 1.45f else 1f,
+        animationSpec = infiniteRepeatable(tween(1_400), RepeatMode.Reverse),
+        label = "haloScale"
     )
 
     Row(
@@ -372,21 +456,44 @@ private fun CaptureControls(
         }
 
         Box(
-            modifier = Modifier
-                .padding(horizontal = 28.dp)
-                .size(64.dp)
-                .clip(RoundedCornerShape(percent = 50))
-                .background(micColor.copy(alpha = if (isListening) pulse else 1f))
-                .alpha(if (enabled) 1f else 0.5f),
+            modifier = Modifier.padding(horizontal = 28.dp),
             contentAlignment = Alignment.Center
         ) {
-            IconButton(onClick = onToggleMic, enabled = enabled) {
-                Icon(
-                    imageVector = if (isListening) Icons.Filled.Stop else Icons.Filled.Mic,
-                    contentDescription = if (isListening) "Stop dictation" else "Dictate",
-                    tint = MaterialTheme.colorScheme.onPrimary,
-                    modifier = Modifier.size(28.dp)
+            if (isListening) {
+                Box(
+                    modifier = Modifier
+                        .size(64.dp)
+                        .scale(haloScale)
+                        .alpha(0.18f)
+                        .clip(RoundedCornerShape(percent = 50))
+                        .background(micColor)
                 )
+                Box(
+                    modifier = Modifier
+                        .size(64.dp)
+                        .scale(1f + (haloScale - 1f) * 0.5f)
+                        .alpha(0.28f)
+                        .clip(RoundedCornerShape(percent = 50))
+                        .background(micColor)
+                )
+            }
+
+            Box(
+                modifier = Modifier
+                    .size(64.dp)
+                    .clip(RoundedCornerShape(percent = 50))
+                    .background(micColor)
+                    .alpha(if (enabled) 1f else 0.5f),
+                contentAlignment = Alignment.Center
+            ) {
+                IconButton(onClick = onToggleMic, enabled = enabled) {
+                    Icon(
+                        imageVector = Icons.Filled.Mic,
+                        contentDescription = if (isListening) "Stop dictation" else "Dictate",
+                        tint = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
             }
         }
 
